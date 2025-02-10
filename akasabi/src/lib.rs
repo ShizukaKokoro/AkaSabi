@@ -13,4 +13,5 @@
 pub mod core;
 pub mod database;
 pub mod instructions;
+pub mod processor;
 pub mod syntax_tree;
