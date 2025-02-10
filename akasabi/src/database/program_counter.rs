@@ -1,6 +1,7 @@
 //! プログラムカウンター
 
-use crate::{core::*, database::Database};
+use super::*;
+use crate::core::*;
 use std::fmt::Debug;
 
 /// プログラムカウンター

@@ -1,6 +1,7 @@
 //! レジスタ
 
-use crate::{core::*, database::Database};
+use super::*;
+use crate::core::*;
 use std::fmt::Debug;
 use thiserror::Error;
 
@@ -60,4 +61,48 @@ pub enum RegisterError {
     /// 範囲外
     #[error("out of range")]
     OutOfRange,
+}
+
+/// ステータスレジスタ
+#[derive(Debug)]
+pub struct StatusRegister<const N: usize> {
+    data: [bool; N],
+}
+impl<const N: usize> Default for StatusRegister<N> {
+    fn default() -> Self {
+        Self { data: [false; N] }
+    }
+}
+impl<P: Debug + From<Vec<String>>, const N: usize> Database<P> for StatusRegister<N> {
+    type Key = usize;
+    type Value = bool;
+    type Error = RegisterError;
+
+    fn load(&self, key: Self::Key) -> Result<Self::Value, Self::Error> {
+        if key < N {
+            Ok(self.data[key])
+        } else {
+            Err(RegisterError::OutOfRange)
+        }
+    }
+
+    fn store(
+        &mut self,
+        key: Self::Key,
+        value: Self::Value,
+        diffs: &mut Diffs<P, Self::Value>,
+    ) -> Result<(), Self::Error> {
+        if key < N {
+            let pre = self.data[key];
+            self.data[key] = value;
+            diffs.push(Diff::new(
+                P::from(vec!["StatusRegister".to_string(), key.to_string()]),
+                pre,
+                value,
+            ));
+            Ok(())
+        } else {
+            Err(RegisterError::OutOfRange)
+        }
+    }
 }
