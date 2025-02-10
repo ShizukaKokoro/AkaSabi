@@ -166,7 +166,7 @@ impl<H: RegisterHistory<u16> + StatusRegisterHistory + ProgramCounterHistory<usi
 
 /// 最小限の LC-3 プロセッサの差分
 #[derive(Debug, Default)]
-pub struct LC3NoMemoryDiff {
+struct LC3NoMemoryDiff {
     reg: Vec<Diff<usize, u16>>,
     psr: Vec<Diff<usize, bool>>,
     pc: Vec<Diff<(), usize>>,
