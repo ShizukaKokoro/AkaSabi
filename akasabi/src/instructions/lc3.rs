@@ -3,11 +3,11 @@
 //! Little Computer 3 (LC-3) は、シンプルな16ビットのプロセッサ。
 //! このモジュールは、LC-3 の命令セットを定義している。
 
-use crate::core::*;
+use crate::core::limited_bits::*;
 use std::{fmt::Debug, hash::Hash};
 
 /// 演算命令
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ArithmeticInstructions<R: Debug + Hash> {
     /// 加算
     ADD {
@@ -55,7 +55,7 @@ pub enum ArithmeticInstructions<R: Debug + Hash> {
 }
 
 /// 制御命令
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ControlInstructions<L, R: Debug + Hash> {
     /// 条件ジャンプ
     BR {
@@ -85,17 +85,21 @@ pub enum ControlInstructions<L, R: Debug + Hash> {
     },
     /// 復帰
     RET,
-    /// 割り込みからの復帰
-    RTI,
-    /// トラップ
-    TRAP {
-        /// トラップベクタ
-        trap_vect8: LimitedU8<8>,
-    },
+}
+
+/// 割り込みからの復帰
+#[derive(Debug, Clone)]
+pub struct RTI;
+
+/// トラップ
+#[derive(Debug, Clone)]
+pub struct TRAP {
+    /// トラップベクタ
+    pub trap_vect8: LimitedU8<8>,
 }
 
 /// ロード・ストア命令
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LoadStoreInstructions<L, R: Debug + Hash> {
     /// ロード
     LD {
@@ -153,16 +157,20 @@ pub enum LoadStoreInstructions<L, R: Debug + Hash> {
 }
 
 /// 未使用命令
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnusedInstruction(pub LimitedU16<12>);
 
 /// 命令
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LC3Instructions<L, R: Debug + Hash> {
     /// 演算命令
     Arithmetic(ArithmeticInstructions<R>),
     /// 制御命令
     Control(ControlInstructions<L, R>),
+    /// 割り込みからの復帰
+    RTI(RTI),
+    /// トラップ
+    TRAP(TRAP),
     /// ロード・ストア命令
     LoadStore(LoadStoreInstructions<L, R>),
     /// 未使用命令

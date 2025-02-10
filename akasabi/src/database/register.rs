@@ -1,26 +1,28 @@
 //! レジスタ
 
-use super::*;
-use crate::core::*;
-use std::fmt::Debug;
+use crate::core::database::*;
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 use thiserror::Error;
 
 /// レジスタ
 ///
 /// 任意の型を任意の数だけ格納できるレジスタ
 #[derive(Debug)]
-pub struct Register<T: Debug + Copy + Default, const N: usize> {
+pub struct Register<T: Debug + Copy + Default, const N: usize, H: RegisterHistory<T>> {
     data: [T; N],
+    history: Option<Rc<RefCell<H>>>,
 }
-impl<T: Debug + Copy + Default, const N: usize> Default for Register<T, N> {
-    fn default() -> Self {
+impl<T: Debug + Copy + Default, const N: usize, H: RegisterHistory<T>> Register<T, N, H> {
+    /// 新しいレジスタを作成
+    pub fn new(data: Option<[T; N]>, history: Option<Rc<RefCell<H>>>) -> Self {
         Self {
-            data: [T::default(); N],
+            data: data.unwrap_or([T::default(); N]),
+            history,
         }
     }
 }
-impl<P: Debug + From<Vec<String>>, T: Debug + Copy + Default, const N: usize> Database<P>
-    for Register<T, N>
+impl<T: Debug + Copy + Default, const N: usize, H: RegisterHistory<T>> Database
+    for Register<T, N, H>
 {
     type Key = usize;
     type Value = T;
@@ -34,25 +36,30 @@ impl<P: Debug + From<Vec<String>>, T: Debug + Copy + Default, const N: usize> Da
         }
     }
 
-    fn store(
-        &mut self,
-        key: Self::Key,
-        value: Self::Value,
-        diffs: &mut Diffs<P, Self::Value>,
-    ) -> Result<(), Self::Error> {
+    fn store(&mut self, key: Self::Key, value: Self::Value) -> Result<(), Self::Error> {
         if key < N {
             let pre = self.data[key];
             self.data[key] = value;
-            diffs.push(Diff::new(
-                P::from(vec!["Register".to_string(), key.to_string()]),
-                pre,
-                value,
-            ));
+            if let Some(ref mut h) = self.history {
+                h.borrow_mut().register(key, pre, value);
+            }
             Ok(())
         } else {
             Err(RegisterError::OutOfRange)
         }
     }
+}
+
+/// レジスタの履歴トレイト
+pub trait RegisterHistory<T: Debug + Copy + Default>: History {
+    /// レジスタの変更を記録
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - キー
+    /// * `pre` - 変更前の値
+    /// * `post` - 変更後の値
+    fn register(&mut self, key: usize, pre: T, post: T);
 }
 
 /// レジスタエラー
@@ -65,15 +72,20 @@ pub enum RegisterError {
 
 /// ステータスレジスタ
 #[derive(Debug)]
-pub struct StatusRegister<const N: usize> {
+pub struct StatusRegister<const N: usize, H: StatusRegisterHistory> {
     data: [bool; N],
+    history: Option<Rc<RefCell<H>>>,
 }
-impl<const N: usize> Default for StatusRegister<N> {
-    fn default() -> Self {
-        Self { data: [false; N] }
+impl<const N: usize, H: StatusRegisterHistory> StatusRegister<N, H> {
+    /// 新しいステータスレジスタを作成
+    pub fn new(data: Option<[bool; N]>, history: Option<Rc<RefCell<H>>>) -> Self {
+        Self {
+            data: data.unwrap_or([false; N]),
+            history,
+        }
     }
 }
-impl<P: Debug + From<Vec<String>>, const N: usize> Database<P> for StatusRegister<N> {
+impl<const N: usize, H: StatusRegisterHistory> Database for StatusRegister<N, H> {
     type Key = usize;
     type Value = bool;
     type Error = RegisterError;
@@ -86,23 +98,28 @@ impl<P: Debug + From<Vec<String>>, const N: usize> Database<P> for StatusRegiste
         }
     }
 
-    fn store(
-        &mut self,
-        key: Self::Key,
-        value: Self::Value,
-        diffs: &mut Diffs<P, Self::Value>,
-    ) -> Result<(), Self::Error> {
+    fn store(&mut self, key: Self::Key, value: Self::Value) -> Result<(), Self::Error> {
         if key < N {
             let pre = self.data[key];
             self.data[key] = value;
-            diffs.push(Diff::new(
-                P::from(vec!["StatusRegister".to_string(), key.to_string()]),
-                pre,
-                value,
-            ));
+            if let Some(ref mut h) = self.history {
+                h.borrow_mut().status_register(key, pre, value);
+            }
             Ok(())
         } else {
             Err(RegisterError::OutOfRange)
         }
     }
+}
+
+/// ステータスレジスタの履歴トレイト
+pub trait StatusRegisterHistory: History {
+    /// ステータスレジスタの変更を記録
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - キー
+    /// * `pre` - 変更前の値
+    /// * `post` - 変更後の値
+    fn status_register(&mut self, key: usize, pre: bool, post: bool);
 }

@@ -1,25 +1,26 @@
 //! アセンブリ
 
-use std::ops::Index;
-
 /// アセンブリ
 #[derive(Debug)]
-pub struct Assembly<I> {
+pub struct Assembly<I: Clone> {
     instructions: Vec<I>,
 }
-impl<Idx, I> Index<Idx> for Assembly<I>
-where
-    Idx: std::slice::SliceIndex<[I]>,
-{
-    type Output = Idx::Output;
-
-    fn index(&self, index: Idx) -> &Self::Output {
-        &self.instructions[index]
-    }
-}
-impl<I> Assembly<I> {
+impl<I: Clone> Assembly<I> {
     /// 新しいアセンブリを作成する
     pub fn new(instructions: Vec<I>) -> Self {
         Self { instructions }
+    }
+
+    /// 命令の取得
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - インデックス
+    ///
+    /// # Returns
+    ///
+    /// インデックスに対応する命令
+    pub fn get(&self, index: usize) -> Option<I> {
+        self.instructions.get(index).cloned()
     }
 }
