@@ -1,5 +1,5 @@
 [workspace]
-members = [ "akasabi","lab"]
+members = ["akasabi", "lab"]
 solver = "2"
 
 [workspace.package]
@@ -7,7 +7,10 @@ authors = ["ShizukaKokoro"]
 edition = "2021"
 
 [workspace.dependencies]
+thiserror = "2.0.11"
 log = "0.4.25"
+
+akasabi = { path = "akasabi" }
 
 [workspace.dev-dependencies]
 pretty_assertions = "1.4.1"
