@@ -36,7 +36,12 @@ pub trait Database: Debug {
 /// 履歴トレイト
 ///
 /// 全てのデータベースは履歴を保存できるようにするべき。
-pub trait History: Debug + Default {}
+pub trait History: Debug + Default {
+    /// 履歴の取り入れ開始
+    fn open(&mut self);
+    /// 履歴の取り入れ終了
+    fn close(&mut self);
+}
 
 /// 差分
 #[derive(Debug, Clone)]

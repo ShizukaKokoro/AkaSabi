@@ -24,27 +24,31 @@ pub enum LC3NoMemoryInstructions {
     Arithmetic(ArithmeticInstructions<usize>),
     /// 制御命令
     Control(ControlInstructions<usize, u16>),
+    /// ラベルのアドレスをロード
+    LEA {
+        /// 宛先
+        dr: usize,
+        /// オフセット
+        pc_offset9: usize,
+    },
 }
 
 /// 最小限の LC-3 プロセッサ
-pub struct LC3NoMemoryProcessor<
-    H: RegisterHistory<u16> + StatusRegisterHistory + ProgramCounterHistory<usize>,
-> {
-    reg: Register<u16, 8, H>,
-    psr: StatusRegister<3, H>,
-    pc: ProgramCounter<usize, H>,
+pub struct LC3NoMemoryProcessor {
+    reg: Register<u16, 8, LC3NoMemoryHistory>,
+    psr: StatusRegister<3, LC3NoMemoryHistory>,
+    pc: ProgramCounter<usize, LC3NoMemoryHistory>,
     tree: Assembly<LC3NoMemoryInstructions>,
+    history: Option<Rc<RefCell<LC3NoMemoryHistory>>>,
 }
-impl<H: RegisterHistory<u16> + StatusRegisterHistory + ProgramCounterHistory<usize>>
-    LC3NoMemoryProcessor<H>
-{
+impl LC3NoMemoryProcessor {
     /// 新しいプロセッサを作成
     pub fn new(
         tree: Assembly<LC3NoMemoryInstructions>,
         reg_data: Option<[u16; 8]>,
         psr_data: Option<[bool; 3]>,
         pc_data: Option<usize>,
-        history: Option<Rc<RefCell<H>>>,
+        history: Option<Rc<RefCell<LC3NoMemoryHistory>>>,
     ) -> Self {
         let history = history.map(|h| Rc::clone(&h));
         Self {
@@ -52,6 +56,7 @@ impl<H: RegisterHistory<u16> + StatusRegisterHistory + ProgramCounterHistory<usi
             psr: StatusRegister::new(psr_data, history.clone()),
             pc: ProgramCounter::new(pc_data, history.clone()),
             tree,
+            history,
         }
     }
 
@@ -64,100 +69,125 @@ impl<H: RegisterHistory<u16> + StatusRegisterHistory + ProgramCounterHistory<usi
 
     /// 1ステップずつ実行
     pub fn step(&mut self) -> Result<(), LC3NoMemoryError> {
+        if let Some(history) = &self.history {
+            history.borrow_mut().open();
+        }
         let pc = self.pc.load(()).unwrap();
         let inst = self.tree.get(pc);
         match inst {
-            Some(inst) => match inst {
-                LC3NoMemoryInstructions::Arithmetic(inst) => match inst {
-                    ArithmeticInstructions::ADD { dr, sr1, sr2 } => {
-                        let sr1 = self.reg.load(sr1)?;
-                        let sr2 = self.reg.load(sr2)?;
-                        let result = sr1.wrapping_add(sr2);
-                        self.setcc(result)?;
-                        self.reg.store(dr, result)?;
-                    }
-                    ArithmeticInstructions::ADDI { dr, sr1, imm5 } => {
-                        let sr1 = self.reg.load(sr1)?;
-                        let imm5 = {
-                            let imm5 = imm5.get() as u16;
-                            if imm5 & 0x10 != 0 {
-                                imm5 | 0xFFE0
+            Some(inst) => {
+                if let Some(history) = self.history.as_mut() {
+                    history.borrow_mut().inst(inst.clone());
+                }
+                match inst {
+                    LC3NoMemoryInstructions::Arithmetic(inst) => match inst {
+                        ArithmeticInstructions::ADD { dr, sr1, sr2 } => {
+                            let sr1 = self.reg.load(sr1)?;
+                            let sr2 = self.reg.load(sr2)?;
+                            let result = sr1.wrapping_add(sr2);
+                            self.setcc(result)?;
+                            self.reg.store(dr, result)?;
+                            self.pc.store((), pc + 1).unwrap();
+                        }
+                        ArithmeticInstructions::ADDI { dr, sr1, imm5 } => {
+                            let sr1 = self.reg.load(sr1)?;
+                            let imm5 = {
+                                let imm5 = imm5.get() as u16;
+                                if imm5 & 0x10 != 0 {
+                                    imm5 | 0xFFE0
+                                } else {
+                                    imm5
+                                }
+                            };
+                            let result = sr1.wrapping_add(imm5);
+                            self.setcc(result)?;
+                            self.reg.store(dr, result)?;
+                            self.pc.store((), pc + 1).unwrap();
+                        }
+                        ArithmeticInstructions::AND { dr, sr1, sr2 } => {
+                            let sr1 = self.reg.load(sr1)?;
+                            let sr2 = self.reg.load(sr2)?;
+                            let result = sr1 & sr2;
+                            self.setcc(result)?;
+                            self.reg.store(dr, result)?;
+                            self.pc.store((), pc + 1).unwrap();
+                        }
+                        ArithmeticInstructions::ANDI { dr, sr1, imm5 } => {
+                            let sr1 = self.reg.load(sr1)?;
+                            let imm5 = {
+                                let imm5 = imm5.get() as u16;
+                                if imm5 & 0x10 != 0 {
+                                    imm5 | 0xFFE0
+                                } else {
+                                    imm5
+                                }
+                            };
+                            let result = sr1 & imm5;
+                            self.setcc(result)?;
+                            self.reg.store(dr, result)?;
+                            self.pc.store((), pc + 1).unwrap();
+                        }
+                        ArithmeticInstructions::NOT { dr, sr } => {
+                            let sr = self.reg.load(sr)?;
+                            let result = !sr;
+                            self.setcc(result)?;
+                            self.reg.store(dr, result)?;
+                            self.pc.store((), pc + 1).unwrap();
+                        }
+                    },
+                    LC3NoMemoryInstructions::Control(inst) => match inst {
+                        ControlInstructions::BR {
+                            n,
+                            z,
+                            p,
+                            pc_offset9,
+                        } => {
+                            let n_ = self.psr.load(0)?;
+                            let z_ = self.psr.load(1)?;
+                            let p_ = self.psr.load(2)?;
+                            if (n_ && n) || (z_ && z) || (p_ && p) {
+                                let pc_offset9 = pc_offset9 as i16;
+                                let pc = pc + pc_offset9 as usize;
+                                self.pc.store((), pc).unwrap();
                             } else {
-                                imm5
+                                self.pc.store((), pc + 1).unwrap();
                             }
-                        };
-                        let result = sr1.wrapping_add(imm5);
-                        self.setcc(result)?;
-                        self.reg.store(dr, result)?;
-                    }
-                    ArithmeticInstructions::AND { dr, sr1, sr2 } => {
-                        let sr1 = self.reg.load(sr1)?;
-                        let sr2 = self.reg.load(sr2)?;
-                        let result = sr1 & sr2;
-                        self.setcc(result)?;
-                        self.reg.store(dr, result)?;
-                    }
-                    ArithmeticInstructions::ANDI { dr, sr1, imm5 } => {
-                        let sr1 = self.reg.load(sr1)?;
-                        let imm5 = {
-                            let imm5 = imm5.get() as u16;
-                            if imm5 & 0x10 != 0 {
-                                imm5 | 0xFFE0
-                            } else {
-                                imm5
-                            }
-                        };
-                        let result = sr1 & imm5;
-                        self.setcc(result)?;
-                        self.reg.store(dr, result)?;
-                    }
-                    ArithmeticInstructions::NOT { dr, sr } => {
-                        let sr = self.reg.load(sr)?;
-                        let result = !sr;
-                        self.setcc(result)?;
-                        self.reg.store(dr, result)?;
-                    }
-                },
-                LC3NoMemoryInstructions::Control(inst) => match inst {
-                    ControlInstructions::BR {
-                        n,
-                        z,
-                        p,
-                        pc_offset9,
-                    } => {
-                        let n_ = self.psr.load(0)?;
-                        let z_ = self.psr.load(1)?;
-                        let p_ = self.psr.load(2)?;
-                        if (n_ && n) || (z_ && z) || (p_ && p) {
-                            let pc_offset9 = pc_offset9 as i16;
-                            let pc = pc.wrapping_add(pc_offset9 as usize);
+                        }
+                        ControlInstructions::JMP { base_r } => {
+                            let base_r = self.reg.load(base_r as usize)?;
+                            self.pc.store((), base_r as usize).unwrap();
+                        }
+                        ControlInstructions::JSR { pc_offset11 } => {
+                            let pc = self.pc.load(()).unwrap() + 1;
+                            self.reg.store(7, pc as u16)?;
+                            let pc_offset11 = pc_offset11 as u16;
+                            let pc = pc + pc_offset11 as usize;
                             self.pc.store((), pc).unwrap();
                         }
-                    }
-                    ControlInstructions::JMP { base_r } => {
-                        let base_r = self.reg.load(base_r as usize)?;
-                        self.pc.store((), base_r as usize).unwrap();
-                    }
-                    ControlInstructions::JSR { pc_offset11 } => {
+                        ControlInstructions::JSRR { base_r } => {
+                            let pc = self.pc.load(()).unwrap() + 1;
+                            self.reg.store(7, pc as u16)?;
+                            let base_r = self.reg.load(base_r as usize)?;
+                            self.pc.store((), base_r as usize).unwrap();
+                        }
+                        ControlInstructions::RET => {
+                            let pc = self.reg.load(7)?;
+                            self.pc.store((), pc as usize).unwrap();
+                        }
+                    },
+                    LC3NoMemoryInstructions::LEA { dr, pc_offset9 } => {
                         let pc = self.pc.load(()).unwrap();
-                        self.reg.store(7, pc as u16)?;
-                        let pc_offset11 = pc_offset11 as u16;
-                        let pc = pc.wrapping_add(pc_offset11 as usize);
-                        self.pc.store((), pc).unwrap();
+                        let result = (pc + pc_offset9) as u16;
+                        self.reg.store(dr, result)?;
+                        self.setcc(result)?;
+                        self.pc.store((), pc + 1).unwrap();
                     }
-                    ControlInstructions::JSRR { base_r } => {
-                        let pc = self.pc.load(()).unwrap();
-                        self.reg.store(7, pc as u16)?;
-                        let base_r = self.reg.load(base_r as usize)?;
-                        self.pc.store((), base_r as usize).unwrap();
-                    }
-                    ControlInstructions::RET => {
-                        let pc = self.reg.load(7)?;
-                        self.pc.store((), pc as usize).unwrap();
-                    }
-                },
-            },
+                }
+            }
             None => return Err(LC3NoMemoryError::Halted),
+        }
+        if let Some(history) = self.history.as_ref() {
+            history.borrow_mut().close();
         }
 
         Ok(())
@@ -180,10 +210,11 @@ pub struct LC3NoMemoryHistory {
     pc: usize,
     diffs: Vec<LC3NoMemoryDiff>,
     now: usize,
+    inst: Option<LC3NoMemoryInstructions>,
 }
 impl Debug for LC3NoMemoryHistory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "History (t = {})", self.now)?;
+        writeln!(f, "History (t = {}) => {:?}", self.now, self.inst)?;
         for (i, r) in self.reg.iter().enumerate() {
             writeln!(f, "\tR{}: {:016b}", i, r)?;
         }
@@ -192,28 +223,45 @@ impl Debug for LC3NoMemoryHistory {
         Ok(())
     }
 }
-impl History for LC3NoMemoryHistory {}
-impl RegisterHistory<u16> for LC3NoMemoryHistory {
-    fn register(&mut self, key: usize, pre: u16, post: u16) {
+impl LC3NoMemoryHistory {
+    /// 実行した命令を登録
+    fn inst(&mut self, inst: LC3NoMemoryInstructions) {
+        self.inst = Some(inst);
+    }
+}
+impl History for LC3NoMemoryHistory {
+    fn open(&mut self) {
         while self.diffs.len() <= self.now {
             self.diffs.push(LC3NoMemoryDiff::default());
         }
+    }
+
+    fn close(&mut self) {
+        let diff = self.diffs.get(self.now).unwrap();
+        for d in &diff.reg {
+            self.reg[*d.key()] = d.post();
+        }
+        for d in &diff.psr {
+            self.psr.0 = d.post();
+        }
+        for d in &diff.pc {
+            self.pc = d.post();
+        }
+        self.now += 1;
+    }
+}
+impl RegisterHistory<u16> for LC3NoMemoryHistory {
+    fn register(&mut self, key: usize, pre: u16, post: u16) {
         self.diffs[self.now].reg.push(Diff::new(key, pre, post));
     }
 }
 impl StatusRegisterHistory for LC3NoMemoryHistory {
     fn status_register(&mut self, key: usize, pre: bool, post: bool) {
-        while self.diffs.len() <= self.now {
-            self.diffs.push(LC3NoMemoryDiff::default());
-        }
         self.diffs[self.now].psr.push(Diff::new(key, pre, post));
     }
 }
 impl ProgramCounterHistory<usize> for LC3NoMemoryHistory {
     fn program_counter(&mut self, pre: usize, post: usize) {
-        while self.diffs.len() <= self.now {
-            self.diffs.push(LC3NoMemoryDiff::default());
-        }
         self.diffs[self.now].pc.push(Diff::new((), pre, post));
     }
 }
