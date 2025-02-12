@@ -5,11 +5,11 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 /// プログラムカウンター
 #[derive(Debug)]
-pub struct ProgramCounter<T: Debug + Copy + Default, H: ProgramCounterHistory<T>> {
+pub struct ProgramCounter<T: Debug + Clone + Default, H: ProgramCounterHistory<T>> {
     data: T,
     history: Option<Rc<RefCell<H>>>,
 }
-impl<T: Debug + Copy + Default, H: ProgramCounterHistory<T>> ProgramCounter<T, H> {
+impl<T: Debug + Clone + Default, H: ProgramCounterHistory<T>> ProgramCounter<T, H> {
     /// 新しいプログラムカウンターを作成
     pub fn new(data: Option<T>, history: Option<Rc<RefCell<H>>>) -> Self {
         Self {
@@ -18,27 +18,27 @@ impl<T: Debug + Copy + Default, H: ProgramCounterHistory<T>> ProgramCounter<T, H
         }
     }
 }
-impl<T: Debug + Copy + Default, H: ProgramCounterHistory<T>> Database for ProgramCounter<T, H> {
+impl<T: Debug + Clone + Default, H: ProgramCounterHistory<T>> Database for ProgramCounter<T, H> {
     type Key = ();
     type Value = T;
     type Error = ();
 
     fn load(&self, _: Self::Key) -> Result<Self::Value, Self::Error> {
-        Ok(self.data)
+        Ok(self.data.clone())
     }
 
     fn store(&mut self, _: Self::Key, value: Self::Value) -> Result<(), Self::Error> {
-        let pre = self.data;
-        self.data = value;
         if let Some(ref mut h) = self.history {
-            h.borrow_mut().program_counter(pre, value);
+            let pre = self.data.clone();
+            h.borrow_mut().program_counter(pre, value.clone());
         }
+        self.data = value;
         Ok(())
     }
 }
 
 /// プログラムカウンターの履歴トレイト
-pub trait ProgramCounterHistory<T: Debug + Copy + Default>: History {
+pub trait ProgramCounterHistory<T: Debug + Clone + Default>: History {
     /// プログラムカウンターの変更を記録
     ///
     /// # Arguments

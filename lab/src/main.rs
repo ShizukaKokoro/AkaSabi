@@ -4,6 +4,7 @@ use akasabi::lc3_no_memory::*;
 use std::{cell::RefCell, fmt::Debug, rc::Rc, thread::sleep, time::Duration};
 
 fn main() {
+    // ラベル付きの構文木と実行ファイルを分離
     let tree = Assembly::new(vec![
         LC3NoMemoryInstructions::Arithmetic(ArithmeticInstructions::ANDI {
             dr: 1,

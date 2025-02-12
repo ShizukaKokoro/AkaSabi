@@ -1,27 +1,27 @@
 //! レジスタ
 
 use crate::core::database::*;
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{array, cell::RefCell, fmt::Debug, rc::Rc};
 use thiserror::Error;
 
 /// レジスタ
 ///
 /// 任意の型を任意の数だけ格納できるレジスタ
 #[derive(Debug)]
-pub struct Register<T: Debug + Copy + Default, const N: usize, H: RegisterHistory<T>> {
+pub struct Register<T: Debug + Clone + Default, const N: usize, H: RegisterHistory<T>> {
     data: [T; N],
     history: Option<Rc<RefCell<H>>>,
 }
-impl<T: Debug + Copy + Default, const N: usize, H: RegisterHistory<T>> Register<T, N, H> {
+impl<T: Debug + Clone + Default, const N: usize, H: RegisterHistory<T>> Register<T, N, H> {
     /// 新しいレジスタを作成
     pub fn new(data: Option<[T; N]>, history: Option<Rc<RefCell<H>>>) -> Self {
         Self {
-            data: data.unwrap_or([T::default(); N]),
+            data: data.unwrap_or(array::from_fn(|_| T::default())),
             history,
         }
     }
 }
-impl<T: Debug + Copy + Default, const N: usize, H: RegisterHistory<T>> Database
+impl<T: Debug + Clone + Default, const N: usize, H: RegisterHistory<T>> Database
     for Register<T, N, H>
 {
     type Key = usize;
@@ -29,29 +29,27 @@ impl<T: Debug + Copy + Default, const N: usize, H: RegisterHistory<T>> Database
     type Error = RegisterError;
 
     fn load(&self, key: Self::Key) -> Result<Self::Value, Self::Error> {
-        if key < N {
-            Ok(self.data[key])
-        } else {
-            Err(RegisterError::OutOfRange)
+        if key >= N {
+            return Err(RegisterError::OutOfRange);
         }
+        Ok(self.data[key].clone())
     }
 
     fn store(&mut self, key: Self::Key, value: Self::Value) -> Result<(), Self::Error> {
-        if key < N {
-            let pre = self.data[key];
-            self.data[key] = value;
-            if let Some(ref mut h) = self.history {
-                h.borrow_mut().register(key, pre, value);
-            }
-            Ok(())
-        } else {
-            Err(RegisterError::OutOfRange)
+        if key >= N {
+            return Err(RegisterError::OutOfRange);
         }
+        if let Some(ref mut h) = self.history {
+            let pre = self.data[key].clone();
+            h.borrow_mut().register(key, pre, value.clone());
+        }
+        self.data[key] = value;
+        Ok(())
     }
 }
 
 /// レジスタの履歴トレイト
-pub trait RegisterHistory<T: Debug + Copy + Default>: History {
+pub trait RegisterHistory<T: Debug + Clone + Default>: History {
     /// レジスタの変更を記録
     ///
     /// # Arguments
