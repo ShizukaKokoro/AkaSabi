@@ -4,8 +4,7 @@ use akasabi::lc3_no_memory::*;
 use std::{cell::RefCell, fmt::Debug, rc::Rc, thread::sleep, time::Duration};
 
 fn main() {
-    // ラベル付きの構文木と実行ファイルを分離
-    let tree = Assembly::new(vec![
+    let insts = [
         LC3NoMemoryInstructions::Arithmetic(ArithmeticInstructions::ANDI {
             dr: 1,
             sr1: 1,
@@ -272,9 +271,9 @@ fn main() {
         LC3NoMemoryInstructions::Control(ControlInstructions::RET),
         // ERROR
         // HALT
-    ]);
+    ];
     let history = Rc::new(RefCell::new(LC3NoMemoryHistory::default()));
-    let mut prc = LC3NoMemoryProcessor::new(tree, None, None, None, Some(history.clone()));
+    let mut prc = LC3NoMemoryProcessor::new(Some(insts), None, None, None, Some(history.clone()));
 
     while prc.step().is_ok() {
         println!("{:?}", history.borrow());
