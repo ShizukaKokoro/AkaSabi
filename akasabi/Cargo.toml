@@ -5,3 +5,8 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+log.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+rstest.workspace = true
