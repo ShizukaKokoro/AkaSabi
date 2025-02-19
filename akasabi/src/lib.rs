@@ -12,3 +12,7 @@
     clippy::style
 )]
 #![deny(clippy::correctness, clippy::suspicious)]
+
+pub mod architecture;
+pub mod base;
+pub mod simulator;
